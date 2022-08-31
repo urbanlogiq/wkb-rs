@@ -49,6 +49,7 @@ use std::io::Read;
 
 pub trait NumTy = Float + Debug + Into<f64> + From<f64>;
 
+#[derive(Debug)]
 pub enum WkbError {
     IoError(std::io::Error),
     Unsupported(&'static str),
