@@ -153,7 +153,7 @@ fn write_ring<T: NumTy>(buffer: &mut Vec<u8>, ring: &LineString<T>) {
 
 #[inline]
 fn write_point<T: NumTy>(buffer: &mut Vec<u8>, p: &Point<T>) {
-    buffer.push(1);
+    buffer.push(1); // minor: we could use `Endian::Little` instead of `1` here (and in every write function) to be more explicit
     write_u32(buffer, GeomTy::Point as u32);
     write_value(buffer, p.x());
     write_value(buffer, p.y());
@@ -183,7 +183,7 @@ fn write_polygon<T: NumTy>(buffer: &mut Vec<u8>, p: &Polygon<T>) {
     let num_rings = (interiors.len() + 1) as u32;
     write_u32(buffer, num_rings);
     write_ring(buffer, exterior);
-
+    // is there somewhere in the spec that says that the exterior is always the first ring? Or is that an arbitrary choice?
     for ring in interiors {
         write_ring(buffer, ring);
     }
@@ -249,7 +249,7 @@ impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
 }
 
 fn read_coordinate<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Coordinate<T>, WkbError> {
-    let x: T = reader.read_f64()?.try_into().unwrap();
+    let x: T = reader.read_f64()?.try_into().unwrap(); // Instead of unwrapping could we return an error here?
     let y: T = reader.read_f64()?.try_into().unwrap();
 
     Ok(Coordinate { x, y })
