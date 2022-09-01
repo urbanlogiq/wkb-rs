@@ -43,6 +43,8 @@ use num_derive::FromPrimitive;
 use num_traits::Float;
 use num_traits::FromPrimitive;
 use std::convert::TryFrom;
+use std::error::Error;
+use std::fmt;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::io::Read;
@@ -56,6 +58,14 @@ pub enum WkbError {
     UnsupportedEndianess,
     InconsistentType,
 }
+
+impl fmt::Display for WkbError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for WkbError {}
 
 impl From<std::io::Error> for WkbError {
     fn from(err: std::io::Error) -> Self {
