@@ -47,7 +47,7 @@ use std::fmt::Debug;
 use std::io::Cursor;
 use std::io::Read;
 
-pub trait NumTy = Float + Debug + Into<f64> + From<f64>;
+pub trait NumTy = Float + Debug + From<f64> + Into<f64>;
 
 #[derive(Debug)]
 pub enum WkbError {
@@ -102,11 +102,16 @@ impl<'a, 'b> LittleEndianReader<'a, 'b> {
     }
 }
 
+#[derive(Clone)]
 pub struct Wkb(Vec<u8>);
 
 impl Wkb {
     pub fn new(wkb: Vec<u8>) -> Self {
         Self(wkb)
+    }
+
+    pub fn take(self) -> Vec<u8> {
+        self.0
     }
 }
 
@@ -229,8 +234,8 @@ impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
 }
 
 fn read_coordinate<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Coordinate<T>, WkbError> {
-    let x: T = reader.read_f64()?.into();
-    let y: T = reader.read_f64()?.into();
+    let x: T = reader.read_f64()?.try_into().unwrap();
+    let y: T = reader.read_f64()?.try_into().unwrap();
 
     Ok(Coordinate { x, y })
 }
@@ -323,5 +328,368 @@ impl<T: NumTy> TryFrom<Wkb> for Geometry<T> {
     fn try_from(geom: Wkb) -> Result<Geometry<T>, Self::Error> {
         let mut cursor = Cursor::new(geom.0.as_slice());
         read_wkb(&mut cursor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BE_POINT_WKB: &[u8] = &[
+        0x0, 0x0, 0x0, 0x0, 0x1, 0x3f, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x00, 0x00, 0x40, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0,
+    ];
+
+    const POINT_WKB: &[u8] = &[
+        0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x40,
+    ];
+    const POINT: &[f64] = &[1.0, 2.0];
+
+    const LINESTRING_WKB: &[u8] = &[
+        0x1, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x8, 0x40,
+    ];
+    const LINESTRING: &[&[f64]] = &[&[1.0, 2.0], &[2.0, 3.0]];
+
+    const POLYGON_WKB: &[u8] = &[
+        0x1, 0x3, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0,
+        0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0,
+    ];
+    const POLYGON: &[&[&[f64]]] = &[&[
+        &[0.0, 0.0],
+        &[1.0, 0.0],
+        &[1.0, 1.0],
+        &[0.0, 1.0],
+        &[0.0, 0.0],
+    ]];
+
+    const POLYGON_WITH_HOLE_WKB: &[u8] = &[
+        0x1, 0x3, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24,
+        0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0,
+        0x3f,
+    ];
+    const POLYGON_WITH_HOLE: &[&[&[f64]]] = &[
+        &[
+            &[0.0, 0.0],
+            &[10.0, 0.0],
+            &[10.0, 10.0],
+            &[0.0, 10.0],
+            &[0.0, 0.0],
+        ],
+        &[
+            &[1.0, 1.0],
+            &[1.0, 2.0],
+            &[2.0, 2.0],
+            &[2.0, 1.0],
+            &[1.0, 1.0],
+        ],
+    ];
+
+    const MULTIPOINT_WKB: &[u8] = &[
+        0x1, 0x4, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x1, 0x1, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40,
+    ];
+    const MULTIPOINT: &[&[f64]] = &[&[1.0, 2.0], &[1.0, 2.0]];
+
+    const MULTILINESTRING_WKB: &[u8] = &[
+        0x1, 0x5, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0x40, 0x1, 0x2, 0x0,
+        0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x26, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x39, 0x40,
+    ];
+    const MULTILINESTRING: &[&[&[f64]]] =
+        &[&[&[1.0, 2.0], &[2.0, 3.0]], &[&[10.0, 10.0], &[11.0, 25.0]]];
+
+    const MULTIPOLYGON_WKB: &[u8] = &[
+        0x1, 0x6, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x3, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0,
+        0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x24, 0x40, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x3, 0x0, 0x0, 0x0,
+        0x1, 0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0,
+        0x3f,
+    ];
+    const MULTIPOLYGON: &[&[&[&[f64]]]] = &[
+        &[&[
+            &[0.0, 0.0],
+            &[10.0, 0.0],
+            &[10.0, 10.0],
+            &[0.0, 10.0],
+            &[0.0, 0.0],
+        ]],
+        &[&[
+            &[1.0, 1.0],
+            &[1.0, 2.0],
+            &[2.0, 2.0],
+            &[2.0, 1.0],
+            &[1.0, 1.0],
+        ]],
+    ];
+
+    const GEOMETRYCOLLECTION_WKB: &[u8] = &[
+        0x1, 0x7, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x3, 0x0, 0x0, 0x0, 0x1,
+        0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0,
+        0x3f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ];
+    const GEOMETRYCOLLECTION_POINT: &[f64] = &[2.0, 0.0];
+    const GEOMETRYCOLLECTION_POLYGON: &[&[&[f64]]] = &[&[
+        &[0.0, 0.0],
+        &[1.0, 0.0],
+        &[1.0, 1.0],
+        &[0.0, 1.0],
+        &[0.0, 0.0],
+    ]];
+
+    #[test]
+    fn test_big_endian() {
+        let point_wkb = Wkb::new(BE_POINT_WKB.to_vec());
+        let geom: Result<Geometry<f64>, _> = point_wkb.clone().try_into();
+        assert!(geom.is_err());
+    }
+
+    #[test]
+    fn test_point() {
+        let point_wkb = Wkb::new(POINT_WKB.to_vec());
+        let geom: Geometry<f64> = point_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::Point(p) => {
+                assert_eq!(p.x(), POINT[0]);
+                assert_eq!(p.y(), POINT[1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), point_wkb.take());
+    }
+
+    #[test]
+    fn test_line_string() {
+        let linestring_wkb = Wkb::new(LINESTRING_WKB.to_vec());
+        let geom: Geometry<f64> = linestring_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::LineString(ref l) => {
+                assert_eq!(l[0].x, LINESTRING[0][0]);
+                assert_eq!(l[0].y, LINESTRING[0][1]);
+                assert_eq!(l[1].x, LINESTRING[1][0]);
+                assert_eq!(l[1].y, LINESTRING[1][1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), linestring_wkb.take());
+    }
+
+    #[test]
+    fn test_polygon() {
+        let polygon_wkb = Wkb::new(POLYGON_WKB.to_vec());
+        let geom: Geometry<f64> = polygon_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::Polygon(ref p) => {
+                let ring = p.exterior();
+                assert_eq!(ring[0].x, POLYGON[0][0][0]);
+                assert_eq!(ring[0].y, POLYGON[0][0][1]);
+                assert_eq!(ring[1].x, POLYGON[0][1][0]);
+                assert_eq!(ring[1].y, POLYGON[0][1][1]);
+                assert_eq!(ring[2].x, POLYGON[0][2][0]);
+                assert_eq!(ring[2].y, POLYGON[0][2][1]);
+                assert_eq!(ring[3].x, POLYGON[0][3][0]);
+                assert_eq!(ring[3].y, POLYGON[0][3][1]);
+                assert_eq!(ring[4].x, POLYGON[0][4][0]);
+                assert_eq!(ring[4].y, POLYGON[0][4][1]);
+
+                assert!(p.interiors().is_empty());
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), polygon_wkb.take());
+    }
+
+    #[test]
+    fn test_polygon_with_hole() {
+        let polygon_wkb = Wkb::new(POLYGON_WITH_HOLE_WKB.to_vec());
+        let geom: Geometry<f64> = polygon_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::Polygon(ref p) => {
+                let ring = p.exterior();
+                assert_eq!(ring[0].x, POLYGON_WITH_HOLE[0][0][0]);
+                assert_eq!(ring[0].y, POLYGON_WITH_HOLE[0][0][1]);
+                assert_eq!(ring[1].x, POLYGON_WITH_HOLE[0][1][0]);
+                assert_eq!(ring[1].y, POLYGON_WITH_HOLE[0][1][1]);
+                assert_eq!(ring[2].x, POLYGON_WITH_HOLE[0][2][0]);
+                assert_eq!(ring[2].y, POLYGON_WITH_HOLE[0][2][1]);
+                assert_eq!(ring[3].x, POLYGON_WITH_HOLE[0][3][0]);
+                assert_eq!(ring[3].y, POLYGON_WITH_HOLE[0][3][1]);
+                assert_eq!(ring[4].x, POLYGON_WITH_HOLE[0][4][0]);
+                assert_eq!(ring[4].y, POLYGON_WITH_HOLE[0][4][1]);
+
+                let interiors = p.interiors();
+                assert!(!interiors.is_empty());
+                let i0 = &interiors[0];
+                assert_eq!(i0[0].x, POLYGON_WITH_HOLE[1][0][0]);
+                assert_eq!(i0[0].y, POLYGON_WITH_HOLE[1][0][1]);
+                assert_eq!(i0[1].x, POLYGON_WITH_HOLE[1][1][0]);
+                assert_eq!(i0[1].y, POLYGON_WITH_HOLE[1][1][1]);
+                assert_eq!(i0[2].x, POLYGON_WITH_HOLE[1][2][0]);
+                assert_eq!(i0[2].y, POLYGON_WITH_HOLE[1][2][1]);
+                assert_eq!(i0[3].x, POLYGON_WITH_HOLE[1][3][0]);
+                assert_eq!(i0[3].y, POLYGON_WITH_HOLE[1][3][1]);
+                assert_eq!(i0[4].x, POLYGON_WITH_HOLE[1][4][0]);
+                assert_eq!(i0[4].y, POLYGON_WITH_HOLE[1][4][1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), polygon_wkb.take());
+    }
+
+    #[test]
+    fn test_multipoint() {
+        let multipoint_wkb = Wkb::new(MULTIPOINT_WKB.to_vec());
+        let geom: Geometry<f64> = multipoint_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::MultiPoint(ref p) => {
+                assert_eq!(p.0[0].x(), MULTIPOINT[0][0]);
+                assert_eq!(p.0[0].y(), MULTIPOINT[0][1]);
+                assert_eq!(p.0[1].x(), MULTIPOINT[1][0]);
+                assert_eq!(p.0[1].y(), MULTIPOINT[1][1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), multipoint_wkb.take());
+    }
+
+    #[test]
+    fn test_multilinestring() {
+        let multilinestring_wkb = Wkb::new(MULTILINESTRING_WKB.to_vec());
+        let geom: Geometry<f64> = multilinestring_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::MultiLineString(ref l) => {
+                assert_eq!(l.0[0][0].x, MULTILINESTRING[0][0][0]);
+                assert_eq!(l.0[0][0].y, MULTILINESTRING[0][0][1]);
+                assert_eq!(l.0[0][1].x, MULTILINESTRING[0][1][0]);
+                assert_eq!(l.0[0][1].y, MULTILINESTRING[0][1][1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), multilinestring_wkb.take());
+    }
+
+    #[test]
+    fn test_multipolygon() {
+        let multipolygon_wkb = Wkb::new(MULTIPOLYGON_WKB.to_vec());
+        let geom: Geometry<f64> = multipolygon_wkb.clone().try_into().unwrap();
+        match geom {
+            Geometry::MultiPolygon(ref p) => {
+                let p0 = &p.0[0];
+                let r0 = p0.exterior();
+                assert!(p0.interiors().is_empty());
+                assert_eq!(r0[0].x, MULTIPOLYGON[0][0][0][0]);
+                assert_eq!(r0[0].y, MULTIPOLYGON[0][0][0][1]);
+                assert_eq!(r0[1].x, MULTIPOLYGON[0][0][1][0]);
+                assert_eq!(r0[1].y, MULTIPOLYGON[0][0][1][1]);
+                assert_eq!(r0[2].x, MULTIPOLYGON[0][0][2][0]);
+                assert_eq!(r0[2].y, MULTIPOLYGON[0][0][2][1]);
+                assert_eq!(r0[3].x, MULTIPOLYGON[0][0][3][0]);
+                assert_eq!(r0[3].y, MULTIPOLYGON[0][0][3][1]);
+                assert_eq!(r0[4].x, MULTIPOLYGON[0][0][4][0]);
+                assert_eq!(r0[4].y, MULTIPOLYGON[0][0][4][1]);
+
+                let p1 = &p.0[1];
+                let r1 = p1.exterior();
+                assert!(p1.interiors().is_empty());
+                assert_eq!(r1[0].x, MULTIPOLYGON[1][0][0][0]);
+                assert_eq!(r1[0].y, MULTIPOLYGON[1][0][0][1]);
+                assert_eq!(r1[1].x, MULTIPOLYGON[1][0][1][0]);
+                assert_eq!(r1[1].y, MULTIPOLYGON[1][0][1][1]);
+                assert_eq!(r1[2].x, MULTIPOLYGON[1][0][2][0]);
+                assert_eq!(r1[2].y, MULTIPOLYGON[1][0][2][1]);
+                assert_eq!(r1[3].x, MULTIPOLYGON[1][0][3][0]);
+                assert_eq!(r1[3].y, MULTIPOLYGON[1][0][3][1]);
+                assert_eq!(r1[4].x, MULTIPOLYGON[1][0][4][0]);
+                assert_eq!(r1[4].y, MULTIPOLYGON[1][0][4][1]);
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), multipolygon_wkb.take());
+    }
+
+    #[test]
+    fn test_geometrycollection() {
+        let geometrycollection_wkb = Wkb::new(GEOMETRYCOLLECTION_WKB.to_vec());
+        let geom: Geometry<f64> = geometrycollection_wkb.clone().try_into().unwrap();
+
+        match geom {
+            Geometry::GeometryCollection(ref g) => {
+                let g0 = &g.0[0];
+                match g0 {
+                    Geometry::Point(p) => {
+                        assert_eq!(p.x(), GEOMETRYCOLLECTION_POINT[0]);
+                        assert_eq!(p.y(), GEOMETRYCOLLECTION_POINT[1]);
+                    }
+                    _ => panic!("wrong type"),
+                }
+
+                let g1 = &g.0[1];
+                match g1 {
+                    Geometry::Polygon(p) => {
+                        let ring = p.exterior();
+                        assert_eq!(ring[0].x, GEOMETRYCOLLECTION_POLYGON[0][0][0]);
+                        assert_eq!(ring[0].y, GEOMETRYCOLLECTION_POLYGON[0][0][1]);
+                        assert_eq!(ring[1].x, GEOMETRYCOLLECTION_POLYGON[0][1][0]);
+                        assert_eq!(ring[1].y, GEOMETRYCOLLECTION_POLYGON[0][1][1]);
+                        assert_eq!(ring[2].x, GEOMETRYCOLLECTION_POLYGON[0][2][0]);
+                        assert_eq!(ring[2].y, GEOMETRYCOLLECTION_POLYGON[0][2][1]);
+                        assert_eq!(ring[3].x, GEOMETRYCOLLECTION_POLYGON[0][3][0]);
+                        assert_eq!(ring[3].y, GEOMETRYCOLLECTION_POLYGON[0][3][1]);
+                        assert_eq!(ring[4].x, GEOMETRYCOLLECTION_POLYGON[0][4][0]);
+                        assert_eq!(ring[4].y, GEOMETRYCOLLECTION_POLYGON[0][4][1]);
+
+                        assert!(p.interiors().is_empty());
+                    }
+                    _ => panic!("wrong type"),
+                }
+            }
+            _ => panic!("wrong type"),
+        }
+
+        let round_trip: Wkb = geom.try_into().unwrap();
+        assert_eq!(round_trip.take(), geometrycollection_wkb.take());
     }
 }
