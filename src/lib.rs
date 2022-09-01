@@ -153,7 +153,7 @@ fn write_ring<T: NumTy>(buffer: &mut Vec<u8>, ring: &LineString<T>) {
 
 #[inline]
 fn write_point<T: NumTy>(buffer: &mut Vec<u8>, p: &Point<T>) {
-    buffer.push(1);
+    buffer.push(Endian::Little as u8);
     write_u32(buffer, GeomTy::Point as u32);
     write_value(buffer, p.x());
     write_value(buffer, p.y());
@@ -161,7 +161,7 @@ fn write_point<T: NumTy>(buffer: &mut Vec<u8>, p: &Point<T>) {
 
 #[inline]
 fn write_line_string<T: NumTy>(buffer: &mut Vec<u8>, l: &LineString<T>) {
-    buffer.push(1);
+    buffer.push(Endian::Little as u8);
 
     let len = l.0.len();
     write_u32(buffer, GeomTy::LineString as u32);
@@ -175,7 +175,7 @@ fn write_line_string<T: NumTy>(buffer: &mut Vec<u8>, l: &LineString<T>) {
 
 #[inline]
 fn write_polygon<T: NumTy>(buffer: &mut Vec<u8>, p: &Polygon<T>) {
-    buffer.push(1);
+    buffer.push(Endian::Little as u8);
 
     write_u32(buffer, GeomTy::Polygon as u32);
     let exterior = p.exterior();
@@ -201,7 +201,7 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
             write_polygon(buffer, p);
         }
         Geometry::MultiPoint(mp) => {
-            buffer.push(1);
+            buffer.push(Endian::Little as u8);
 
             write_u32(buffer, GeomTy::MultiPoint as u32);
             write_u32(buffer, mp.0.len() as u32);
@@ -209,7 +209,7 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
             mp.iter().for_each(|p| write_point(buffer, p));
         }
         Geometry::MultiLineString(ml) => {
-            buffer.push(1);
+            buffer.push(Endian::Little as u8);
 
             write_u32(buffer, GeomTy::MultiLineString as u32);
             write_u32(buffer, ml.0.len() as u32);
@@ -217,7 +217,7 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
             ml.iter().for_each(|l| write_line_string(buffer, l));
         }
         Geometry::MultiPolygon(mp) => {
-            buffer.push(1);
+            buffer.push(Endian::Little as u8);
 
             write_u32(buffer, GeomTy::MultiPolygon as u32);
             write_u32(buffer, mp.0.len() as u32);
@@ -225,7 +225,7 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
             mp.iter().for_each(|p| write_polygon(buffer, p));
         }
         Geometry::GeometryCollection(gc) => {
-            buffer.push(1);
+            buffer.push(Endian::Little as u8);
 
             write_u32(buffer, GeomTy::GeometryCollection as u32);
             write_u32(buffer, gc.len() as u32);
@@ -249,8 +249,8 @@ impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
 }
 
 fn read_coordinate<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Coordinate<T>, WkbError> {
-    let x: T = reader.read_f64()?.try_into().unwrap();
-    let y: T = reader.read_f64()?.try_into().unwrap();
+    let x: T = reader.read_f64()?.into();
+    let y: T = reader.read_f64()?.into();
 
     Ok(Coordinate { x, y })
 }
