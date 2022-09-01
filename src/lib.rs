@@ -113,6 +113,11 @@ impl Wkb {
     pub fn take(self) -> Vec<u8> {
         self.0
     }
+
+    pub fn from_slice<T: NumTy>(data: &[u8]) -> Result<Geometry<T>, WkbError> {
+        let mut cursor = Cursor::new(data);
+        read_wkb(&mut cursor)
+    }
 }
 
 #[inline]
@@ -475,8 +480,12 @@ mod tests {
 
     #[test]
     fn test_point() {
+        let geom_from_slice: Geometry<f64> = Wkb::from_slice(POINT_WKB).unwrap();
+
         let point_wkb = Wkb::new(POINT_WKB.to_vec());
         let geom: Geometry<f64> = point_wkb.clone().try_into().unwrap();
+        assert_eq!(geom, geom_from_slice);
+
         match geom {
             Geometry::Point(p) => {
                 assert_eq!(p.x(), POINT[0]);
