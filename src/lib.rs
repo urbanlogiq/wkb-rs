@@ -34,6 +34,11 @@
 #![feature(trait_alias)]
 #![feature(cursor_remaining)]
 
+/// The `wkb-rs` library implements parsing of WKB (Well Known Binary) geometry
+/// data into `geo-types` structures and serialization of `geo-types` geometry
+/// into WKB data.
+///
+/// At present only 2D types and little-endian byte formats are supported.
 use geo_types::geometry::{
     Coordinate, GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon, Point,
     Polygon,
@@ -54,7 +59,7 @@ pub trait NumTy = Float + Debug + From<f64> + Into<f64>;
 #[derive(Debug)]
 pub enum WkbError {
     IoError(std::io::Error),
-    Unsupported(&'static str),
+    UnsupportedType,
     UnsupportedEndianess,
     InconsistentType,
 }
@@ -112,18 +117,74 @@ impl<'a, 'b> LittleEndianReader<'a, 'b> {
     }
 }
 
+/// The Wkb type is a thin wrapper over an owned buffer containing WKB data
+/// encoded as bytes.
 #[derive(Clone)]
 pub struct Wkb(Vec<u8>);
 
 impl Wkb {
+    /// Constructs a new Wkb structure from an existing Vec<u8>.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::Geometry;
+    /// use wkb_rs::Wkb;
+    ///
+    /// let point_wkb = vec![
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    /// let wkb = Wkb::new(point_wkb);
+    /// let point: Geometry<f64> = wkb.try_into().unwrap();
+    /// match point {
+    ///     Geometry::Point(p) => {
+    ///         let point: geo_types::Point = (1.0, 2.0).into();
+    ///         assert_eq!(point, p);
+    ///     }
+    ///     _ => panic!()
+    /// }
+    /// ```
     pub fn new(wkb: Vec<u8>) -> Self {
         Self(wkb)
     }
 
+    /// Take ownership of the constructed WKB data.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::{Geometry, Point};
+    /// use wkb_rs::Wkb;
+    ///
+    /// let point: Point = (1.0, 2.0).into();
+    /// let wkb: Wkb = Geometry::Point(point).try_into().unwrap();
+    /// let data = wkb.take();
+    /// let point_wkb = vec![
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    /// assert_eq!(data, point_wkb);
+    /// ```
     pub fn take(self) -> Vec<u8> {
         self.0
     }
 
+    /// Parse a Geometry type from a slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::Geometry;
+    /// use wkb_rs::Wkb;
+    ///
+    /// const POINT_WKB: &[u8] = &[
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    ///
+    /// let geo: Geometry<f64> = Wkb::from_slice(POINT_WKB).unwrap();
+    /// ```
     pub fn from_slice<T: NumTy>(data: &[u8]) -> Result<Geometry<T>, WkbError> {
         let mut cursor = Cursor::new(data);
         read_wkb(&mut cursor)
@@ -239,6 +300,21 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
 impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
     type Error = WkbError;
 
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::{Geometry, Point};
+    /// use wkb_rs::Wkb;
+    ///
+    /// let point: Point = (1.0, 2.0).into();
+    /// let wkb = Wkb::try_from(Geometry::Point(point)).unwrap();
+    /// let data = wkb.take();
+    /// let point_wkb = vec![
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    /// assert_eq!(data, point_wkb);
+    /// ```
     fn try_from(geom: Geometry<T>) -> Result<Wkb, Self::Error> {
         let mut buffer = Vec::new();
 
@@ -272,15 +348,13 @@ fn read_wkb<T: NumTy>(cursor: &mut Cursor<&[u8]>) -> Result<Geometry<T>, WkbErro
     let mut endianness = [0u8; 1];
     cursor.read_exact(&mut endianness)?;
 
-    let endianness = Endian::from_u8(endianness[0])
-        .ok_or(WkbError::Unsupported("unsupported endianness value"))?;
+    let endianness = Endian::from_u8(endianness[0]).ok_or(WkbError::UnsupportedEndianess)?;
     let mut reader = match endianness {
         Endian::Big => return Err(WkbError::UnsupportedEndianess),
         Endian::Little => LittleEndianReader { cursor },
     };
 
-    let ty = GeomTy::from_u32(reader.read_u32()?)
-        .ok_or(WkbError::Unsupported("unsupported type value"))?;
+    let ty = GeomTy::from_u32(reader.read_u32()?).ok_or(WkbError::UnsupportedType)?;
     match ty {
         GeomTy::Point => read_coordinate(&mut reader).map(|p| Geometry::Point(Point::from(p))),
         GeomTy::LineString => {
@@ -340,6 +414,26 @@ fn read_wkb<T: NumTy>(cursor: &mut Cursor<&[u8]>) -> Result<Geometry<T>, WkbErro
 impl<T: NumTy> TryFrom<Wkb> for Geometry<T> {
     type Error = WkbError;
 
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::Geometry;
+    /// use wkb_rs::Wkb;
+    ///
+    /// let point_wkb = vec![
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    /// let wkb = Wkb::new(point_wkb);
+    /// let point: Geometry<f64> = Geometry::<f64>::try_from(wkb).unwrap();
+    /// match point {
+    ///     Geometry::Point(p) => {
+    ///         let point: geo_types::Point = (1.0, 2.0).into();
+    ///         assert_eq!(point, p);
+    ///     }
+    ///     _ => panic!()
+    /// }
+    /// ```
     fn try_from(geom: Wkb) -> Result<Geometry<T>, Self::Error> {
         let mut cursor = Cursor::new(geom.0.as_slice());
         read_wkb(&mut cursor)
