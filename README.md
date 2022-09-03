@@ -1,3 +1,3 @@
 # wkb-rs
 
-A lightweight library for converting between WKB and `geo-types`
+A lightweight, MIT-licensed, library for converting geometry data between WKB (Well Known Binary) and `geo-types` representations.

@@ -1,9 +1,11 @@
 [package]
 name = "wkb-rs"
+description = "Conversions between WKB (Well Known Binary) and geo-types"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/urbanlogiq/wkb-rs"
+license = "MIT"
+keywords = ["geo", "wkb"]
 
 [dependencies]
 geo-types = "0.7"
