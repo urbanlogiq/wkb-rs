@@ -40,7 +40,7 @@
 ///
 /// At present only 2D types and little-endian byte formats are supported.
 use geo_types::geometry::{
-    Coordinate, GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon, Point,
+    Coord, GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon, Point,
     Polygon,
 };
 use geo_types::Geometry;
@@ -347,16 +347,14 @@ impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
     }
 }
 
-fn read_coordinate<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Coordinate<T>, WkbError> {
+fn read_coordinate<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Coord<T>, WkbError> {
     let x: T = reader.read_f64()?.into();
     let y: T = reader.read_f64()?.into();
 
-    Ok(Coordinate { x, y })
+    Ok(Coord { x, y })
 }
 
-fn read_coordinates<T: NumTy>(
-    reader: &mut LittleEndianReader,
-) -> Result<Vec<Coordinate<T>>, WkbError> {
+fn read_coordinates<T: NumTy>(reader: &mut LittleEndianReader) -> Result<Vec<Coord<T>>, WkbError> {
     let num_points = reader.read_u32()? as usize;
     let mut points = Vec::with_capacity(num_points);
 
