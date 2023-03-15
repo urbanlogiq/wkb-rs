@@ -297,6 +297,33 @@ fn write_geometry<T: NumTy>(buffer: &mut Vec<u8>, geom: &Geometry<T>) {
     }
 }
 
+impl<T: NumTy> TryFrom<&Geometry<T>> for Wkb {
+    type Error = WkbError;
+
+    /// # Examples
+    ///
+    /// ```
+    /// use geo_types::{Geometry, Point};
+    /// use wkb_rs::Wkb;
+    ///
+    /// let point: Point = (1.0, 2.0).into();
+    /// let wkb = Wkb::try_from(&Geometry::Point(point)).unwrap();
+    /// let data = wkb.take();
+    /// let point_wkb = vec![
+    ///    0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f, 0x0, 0x0, 0x0, 0x0, 0x0,
+    ///    0x0, 0x0, 0x40,
+    /// ];
+    /// assert_eq!(data, point_wkb);
+    /// ```
+    fn try_from(geom: &Geometry<T>) -> Result<Wkb, Self::Error> {
+        let mut buffer = Vec::new();
+
+        write_geometry(&mut buffer, geom);
+
+        Ok(Self(buffer))
+    }
+}
+
 impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
     type Error = WkbError;
 
@@ -316,11 +343,7 @@ impl<T: NumTy> TryFrom<Geometry<T>> for Wkb {
     /// assert_eq!(data, point_wkb);
     /// ```
     fn try_from(geom: Geometry<T>) -> Result<Wkb, Self::Error> {
-        let mut buffer = Vec::new();
-
-        write_geometry(&mut buffer, &geom);
-
-        Ok(Self(buffer))
+        Self::try_from(&geom)
     }
 }
 
