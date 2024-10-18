@@ -32,7 +32,6 @@
 #![deny(clippy::map_flatten)]
 #![deny(clippy::default_trait_access)]
 #![feature(trait_alias)]
-#![feature(cursor_remaining)]
 
 /// The `wkb-rs` library implements parsing of WKB (Well Known Binary) geometry
 /// data into `geo-types` structures and serialization of `geo-types` geometry
@@ -99,7 +98,7 @@ struct LittleEndianReader<'a, 'b> {
     cursor: &'b mut Cursor<&'a [u8]>,
 }
 
-impl<'a, 'b> LittleEndianReader<'a, 'b> {
+impl LittleEndianReader<'_, '_> {
     #[inline(always)]
     fn read_u32(&mut self) -> Result<u32, std::io::Error> {
         let mut r = [0u8; 4];

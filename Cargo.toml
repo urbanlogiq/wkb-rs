@@ -1,7 +1,7 @@
 [package]
 name = "wkb-rs"
 description = "Conversions between WKB (Well Known Binary) and geo-types"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/urbanlogiq/wkb-rs"
 license = "MIT"
@@ -10,4 +10,4 @@ keywords = ["geo", "wkb"]
 [dependencies]
 geo-types = "0.7"
 num-traits = "0.2"
-num-derive = "0.3"
+num-derive = "0.4"
