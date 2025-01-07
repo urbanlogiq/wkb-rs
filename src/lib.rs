@@ -374,7 +374,27 @@ fn read_wkb<T: NumTy>(cursor: &mut Cursor<&[u8]>) -> Result<Geometry<T>, WkbErro
         Endian::Little => LittleEndianReader { cursor },
     };
 
-    let ty = GeomTy::from_u32(reader.read_u32()?).ok_or(WkbError::UnsupportedType)?;
+    let ty_value = reader.read_u32()?;
+
+    let ty_flags = ty_value >> 29;
+    let masked_ty_value = ty_value & ((1 << 29) - 1);
+
+    let (has_z, has_m, has_srid) = (
+        (ty_flags & 0b100) != 0,
+        (ty_flags & 0b010) != 0,
+        (ty_flags & 0b001) != 0,
+    );
+
+    if has_z || has_m {
+        return Err(WkbError::UnsupportedType);
+    }
+
+    let ty = GeomTy::from_u32(masked_ty_value).ok_or(WkbError::UnsupportedType)?;
+
+    if has_srid {
+        _ = reader.read_u32()?;
+    }
+
     match ty {
         GeomTy::Point => read_coordinate(&mut reader).map(|p| Geometry::Point(Point::from(p))),
         GeomTy::LineString => {
@@ -467,6 +487,11 @@ mod tests {
     const BE_POINT_WKB: &[u8] = &[
         0x0, 0x0, 0x0, 0x0, 0x1, 0x3f, 0xf0, 0x0, 0x0, 0x0, 0x0, 0x00, 0x00, 0x40, 0x0, 0x0, 0x0,
         0x0, 0x0, 0x0, 0x0,
+    ];
+
+    const POINT_WKB_SRID: &[u8] = &[
+        0x1, 0x1, 0x0, 0x0, 0x20, 0xe6, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf0, 0x3f,
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40,
     ];
 
     const POINT_WKB: &[u8] = &[
@@ -600,6 +625,15 @@ mod tests {
         let point_wkb = Wkb::new(BE_POINT_WKB.to_vec());
         let geom: Result<Geometry<f64>, _> = point_wkb.clone().try_into();
         assert!(geom.is_err());
+    }
+
+    #[test]
+    fn test_point_srid() {
+        let geom_from_slice: Geometry<f64> = Wkb::from_slice(POINT_WKB_SRID).unwrap();
+
+        let point_wkb = Wkb::new(POINT_WKB.to_vec());
+        let geom: Geometry<f64> = point_wkb.clone().try_into().unwrap();
+        assert_eq!(geom, geom_from_slice);
     }
 
     #[test]
